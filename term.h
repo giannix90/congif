@@ -38,16 +38,18 @@ typedef struct Cell { //basic block of the terminal
     uint8_t pair;
 } Cell;
 
-/*--mod--*/
 
 /*This info_backup structure is used to save and reload*/
+
 typedef struct info_backup{
+
     Cell r1[15];
     Cell r2[15];
     int index1;
     int index2;
+
 }info_backup;
-/*--/mod--*/
+
 
 typedef enum CharSet {CS_BMP, CS_VTG, CS_437} CharSet;
 typedef enum State {S_ANY, S_ESC, S_CSI, S_OSC, S_UNI} State;

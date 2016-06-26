@@ -156,29 +156,6 @@ scroll_up(Term *term)
         term->addr[term->top][col] = BLANK;
 }
 
-
-void
-clear_info(Term * term){
-
-     for(int i=0;i<9;i++){
-        term->addr[term->rows-2][term->cols-16+i] = backup.r1[i];
-    }
-    
-
-    for(int i=0;i<6;i++){
-        
-        term->addr[term->rows-1][term->cols-16+i] = backup.r1[i];
-    }
-
-
-    for(int i=0;i<4;i++){
-        
-        term->addr[term->rows-1][term->cols-9+i]= backup.r1[i+5];
-    }
-}
-
-//
-
 /* Move lines up and put a blank line at the bottom. */
 static void
 scroll_down(Term *term) //scroll the terminal when i reach the bottom
@@ -190,7 +167,6 @@ scroll_down(Term *term) //scroll the terminal when i reach the bottom
         return;
     if (!within_bounds(term, term->bot, 0))
         return;
-    
     addr = term->addr[term->top];
     for (row = term->top; row < term->bot; row++)
         term->addr[row] = term->addr[row+1];
@@ -198,7 +174,11 @@ scroll_down(Term *term) //scroll the terminal when i reach the bottom
     for (col = 0; col < term->cols; col++)
         term->addr[term->bot][col] = BLANK;
 }
-/*--mod---*/
+
+/*-----Mod------*/
+
+
+/*--This function restore the previous content of the box in the terminal---*/
 void
 restore_term(Term* term,int x, int y,int mode)
 {
@@ -220,8 +200,10 @@ restore_term(Term* term,int x, int y,int mode)
 
 }
 
-/*default   y=term->rows-2
-            x=term->cols-16*/
+/* by default   
+*           y=term->rows-2
+*           x=term->cols-16
+*/
 
 void
 save_info(Term *term,int x,int y,int mode)
@@ -243,7 +225,7 @@ save_info(Term *term,int x,int y,int mode)
     }
 }
 
-/*--/Mod--*/
+
 
 //*Function for adding info about sec*//
 void 
@@ -280,10 +262,12 @@ add_info(Term * term,char* code,char* frame,int x,int y,int mode)
     }
 }
 
+/*----/Mod---*/
+
 static void
 addchar(Term *term, uint16_t code)
 {
-    Cell cell = (Cell) {code, term->attr, term->pair};    
+    Cell cell = (Cell) {code, term->attr, term->pair};
     if (!within_bounds(term, term->row, term->col))
         return;//returns if the row and col are not in bounds
     if (term->mode & M_INSERT) {
@@ -295,7 +279,7 @@ addchar(Term *term, uint16_t code)
             cell = next;
         }
     } else {
-        term->addr[term->row][term->col] = cell;     
+        term->addr[term->row][term->col] = cell;
     }
     if (term->col < term->cols - 1) {
         term->col++;

@@ -10,7 +10,6 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <termios.h>
-#include <math.h>
 
 #include "term.h"
 #include "mbf.h"
@@ -31,48 +30,39 @@ static struct Options {
     int quiet;
     int barsize;
     //----------
-    int fps_sampling; //sampling framerate
-    int num_frame; //frame counter
-    int info; //flag wich rappresents if activate or not the info box
-    int fps_replay; //reproducing framerate
-    int x; //position of info box into screen
-    int y; 
-    int info_mode; //indicate how many info visualize
+    uint32_t fps_sampling; //sampling framerate
+    uint32_t num_frame; //frame counter
+    uint8_t info; //flag wich rappresents if activate or not the info box
+    uint32_t fps_replay; //reproducing framerate
+    uint32_t x; //position of info box into screen
+    uint32_t y; 
+    uint8_t info_mode; //indicate how many info visualize
 } options;
 
 
-int counter_avg = 0;
-double currentAvg = 0;
- 
- /*This function calculate the cumulative average*/
-double 
-CumulativeMovingAverage(double new_delay)
+static struct fps_replay_regulator{
+
+	double nominal_t;
+	uint32_t eff_t;
+	
+}fps_replay_regulator;
+
+
+uint32_t
+_new_delay(struct fps_replay_regulator * obj,double fps_delay,uint32_t new_dt)
 {
-     ++counter_avg;
+	//N.B. fps_delay is equal to  100/fps_replay
 
-    /*
-        *    currentAvg=(d_1+d_2+d_3+........+new_delay)/counter_avg;
-        *       
-        *    When calculating successive values, a new value comes into the sum 
-        *    and an old value drops out, meaning a full summation each time is 
-        *    unnecessary for this simple case, for this reason we can use this cumulative formula:
-    */
+	obj->nominal_t += fps_delay;	//at each time i update the nominal delay
 
-     currentAvg += (new_delay - currentAvg)/counter_avg;
+	uint32_t dt = (uint32_t)(obj->nominal_t - (double)obj->eff_t + 0.5);	//dt is the error beteen the nominal time and effective time, if i add 0.5 round  
 
-     return currentAvg;
+	obj->eff_t += dt; // eff_t follow the nominal_t
+
+	return dt; 
 }
 
-int
-decisor(double d1,double currentAvg)
-{
-    int d1_int=(int)d1;
-        if (counter_avg==0)
-        return d1_int;  //for the first value return (int) (100/FPS)
 
-    return currentAvg>=d1?d1_int:d1_int+1;
-
-}
 
 uint8_t
 get_pair(Term *term, int row, int col)
@@ -149,7 +139,7 @@ render(Term *term, Font *font, GIF *gif, uint16_t delay) //renderizza the frame 
 }
 
 int
-convert_script(Term *term)
+convert_script(Term *term,struct fps_replay_regulator * fpsrr)
 {
     FILE *ft;
     int fd;
@@ -169,14 +159,14 @@ convert_script(Term *term)
     double count; //used to count the time in float precision
     char* res;  //used to convert count into string
     char* num_frame; //counter of_number of frame
-    float tot_time; //rappresents the total time, init at the beginning, for future use
-    double avg_delay;   //rappresents the delay wich i want for each frame (100/FPS)
-    int new_delay;  //reppresent the delay for each frame of the gif
+    double nominal_delay;   //rappresents the delay wich i want for each frame (100/FPS)
+    uint32_t new_dt;  //reppresent the delay for each frame of the gif
 
-    avg_delay=(double)((double)100/(double)(options.fps_replay));
+    nominal_delay=(double)((double)100/(double)(options.fps_replay));
+    new_dt=(uint32_t) nominal_delay; //i initialize new_dt with the int part of nominal_delay
 
 
-    res=malloc(sizeof(char)*20);//res[20]
+    res=malloc(sizeof(char)*5);    //res is used to store the information about timing to put on the info box
     num_frame=malloc(sizeof(char)*3);
 
     ft = fopen(options.timings, "r");
@@ -212,9 +202,7 @@ convert_script(Term *term)
         lastdone = 0;
         printf("%s\r[", pb);
         /* get number of chunks */
-        for (c = 0; fscanf(ft, "%f %d\n", &t, &n) == 2; c++)
-            tot_time+=t;
-
+        for (c = 0; fscanf(ft, "%f %d\n", &t, &n) == 2; c++);
         rewind(ft);/*The  rewind()  function sets the file position indicator for the stream
                      pointed to by stream to the beginning of the file.   It  is  equivalent
                     to:
@@ -222,7 +210,6 @@ convert_script(Term *term)
                       (void) fseek(stream, 0L, SEEK_SET)*/
     }
     i = 0;
-    
     while (fscanf(ft, "%f %d\n", &t, &n) == 2) {
         count=count+t; // tot time
         if (options.barsize) {
@@ -230,7 +217,6 @@ convert_script(Term *term)
             if (done > lastdone) {
                 while (done > lastdone) {
                     putchar('#');//putchar(c) is equivalent to putc(c, stdout).
-
                     lastdone++;
                 }
                 fflush(stdout);
@@ -244,7 +230,7 @@ convert_script(Term *term)
                 
                 sprintf(res,"%.2f",count);
 
-                sprintf(num_frame,"%d",options.num_frame);
+                sprintf(num_frame,"%u",options.num_frame);
                 
                 if(options.info){
                 
@@ -252,13 +238,11 @@ convert_script(Term *term)
                 
                     add_info(term,res,num_frame,options.x,options.y,options.info_mode);//i put the info
                 }
-                //restore_term(term,options.x,options.y,options.info_mode);
 
-                new_delay=decisor((double)avg_delay,currentAvg);
+                new_dt=_new_delay(fpsrr,nominal_delay,new_dt); //i calculate the new delay
 
-                CumulativeMovingAverage(new_delay);
                 
-                render(term, font, gif, new_delay);//i render this image every 100/fps cent of sec only with the info
+                render(term, font, gif, new_dt);//i render this image every 100/fps cent of sec only with the info
                 
                 if(options.info)
                     restore_term(term,options.x,options.y,options.info_mode);//i restore the rectangle
@@ -286,8 +270,12 @@ convert_script(Term *term)
         }
         putchar('\n');
     }
-    if(options.info)add_info(term,res,num_frame,options.x,options.y,options.info_mode);
+
+    if(options.info)
+        add_info(term,res,num_frame,options.x,options.y,options.info_mode);
+
     render(term, font, gif, options.fps_sampling);
+
     close_gif(gif);
     return 0;
 no_gif:
@@ -356,6 +344,7 @@ main(int argc, char *argv[])
     int ret;
     Term *term;
     struct winsize size;
+    struct fps_replay_regulator fpsrr;
     
 
     ioctl(0, TIOCGWINSZ, &size);
@@ -431,7 +420,7 @@ main(int argc, char *argv[])
     options.dialogue = argv[optind++];
     options.barsize = options.quiet ? 0 : size.ws_col-1;
     term = new_term(options.height, options.width); //create a new terminal empty
-    ret = convert_script(term);
+    ret = convert_script(term,&fpsrr);
     free(term);
     return ret;
 }
